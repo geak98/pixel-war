@@ -16,7 +16,6 @@
             padding: 20px;
         }
 
-        /* Palette de couleurs */
         .palette {
             display: flex;
             gap: 10px;
@@ -39,7 +38,6 @@
             transform: scale(1.1);
         }
 
-        /* Grille de pixels */
         #grid {
             display: grid;
             grid-template-columns: repeat(20, 20px);
@@ -60,9 +58,8 @@
 <body>
 
     <h1>🎮 Pixel War - Hamza 🎮</h1>
-    <p>Clique sur une couleur puis sur la grille pour dessiner !</p>
+    <p>Choisis une couleur et clique sur un carré pour peindre !</p>
 
-    <!-- Palette de couleurs -->
     <div class="palette" id="palette">
         <div class="color-box selected" style="background: #ff0000;" data-color="#ff0000"></div>
         <div class="color-box" style="background: #00ff00;" data-color="#00ff00"></div>
@@ -74,13 +71,11 @@
         <div class="color-box" style="background: #ffffff;" data-color="#ffffff"></div>
     </div>
 
-    <!-- Grille de pixels -->
     <div id="grid"></div>
 
     <script>
         let selectedColor = '#ff0000';
 
-        // Gestion de la palette
         const palette = document.getElementById('palette');
         palette.addEventListener('click', (e) => {
             if (e.target.classList.contains('color-box')) {
@@ -90,7 +85,6 @@
             }
         });
 
-        // Creation de la grille 20x20
         const grid = document.getElementById('grid');
         for (let i = 0; i < 400; i++) {
             const pixel = document.createElement('div');
