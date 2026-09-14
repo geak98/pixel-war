@@ -1,0 +1,129 @@
+Voici un code simple et complet que tu peux copier-coller dans un fichier nommé index.html sur ton projet GitHub.
+
+Ce code crée une grille de pixels interactives avec une palette de couleurs pour pouvoir dessiner !
+Le code index.html
+HTML
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel War - Hamza</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1e1e2e;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        /* Style de la palette de couleurs */
+        .palette {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            background-color: #2b2b3b;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .color-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.1s;
+        }
+
+        .color-box:hover {
+            transform: scale(1.1);
+        }
+
+        .color-box.selected {
+            border-color: #ffffff;
+            transform: scale(1.15);
+        }
+
+        /* Style de la grille */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(20, 20px); /* Grille de 20x20 pixels */
+            grid-template-rows: repeat(20, 20px);
+            gap: 1px;
+            background-color: #444;
+            border: 3px solid #ffffff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .pixel {
+            width: 20px;
+            height: 20px;
+            background-color: #ffffff;
+            cursor: pointer;
+        }
+
+        .pixel:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🎮 Pixel War - Hamza 🎮</h1>
+    <p>Choisis une couleur et clique sur un carré pour peindre !</p>
+
+    <!-- Palette de couleurs -->
+    <div class="palette" id="palette">
+        <div class="color-box selected" style="background-color: #ff0000;" data-color="#ff0000"></div>
+        <div class="color-box" style="background-color: #00ff00;" data-color="#00ff00"></div>
+        <div class="color-box" style="background-color: #0000ff;" data-color="#0000ff"></div>
+        <div class="color-box" style="background-color: #ffff00;" data-color="#ffff00"></div>
+        <div class="color-box" style="background-color: #ff00ff;" data-color="#ff00ff"></div>
+        <div class="color-box" style="background-color: #00ffff;" data-color="#00ffff"></div>
+        <div class="color-box" style="background-color: #000000;" data-color="#000000"></div>
+        <div class="color-box" style="background-color: #ffffff;" data-color="#ffffff"></div>
+    </div>
+
+    <!-- Grille de pixels -->
+    <div id="grid"></div>
+
+    <script>
+        // Couleur sélectionnée par défaut (rouge)
+        let selectedColor = '#ff0000';
+
+        // Gestion de la sélection de couleur dans la palette
+        const colorBoxes = document.querySelectorAll('.color-box');
+        colorBoxes.forEach(box => {
+            box.addEventListener('click', () => {
+                colorBoxes.forEach(b => b.classList.remove('selected'));
+                box.classList.add('selected');
+                selectedColor = box.getAttribute('data-color');
+            });
+        });
+
+        // Génération de la grille (20 colonnes x 20 lignes = 400 pixels)
+        const grid = document.getElementById('grid');
+        const GRID_SIZE = 20 * 20;
+
+        for (let i = 0; i < GRID_SIZE; i++) {
+            const pixel = document.createElement('div');
+            pixel.classList.add('pixel');
+
+            // Événement quand on clique sur un pixel
+            pixel.addEventListener('click', () => {
+                pixel.style.backgroundColor = selectedColor;
+            });
+
+            grid.appendChild(pixel);
+        }
+    </script
