@@ -51,12 +51,8 @@
             font-weight: bold;
             transition: background 0.2s;
         }
-        button:hover {
-            background-color: #5a5a5a;
-        }
-        button.active-tool {
-            background-color: #2196F3;
-        }
+        button:hover { background-color: #5a5a5a; }
+        button.active-tool { background-color: #2196F3; }
         select, input[type="color"] {
             padding: 6px;
             border-radius: 5px;
@@ -132,7 +128,7 @@
 
         const GRID_SIZE = 200;
         const canvas = document.getElementById('pixelCanvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const container = document.getElementById('canvas-container');
         const statusEl = document.getElementById('status');
 
@@ -141,6 +137,7 @@
         let currentSize = parseInt(document.getElementById('brushSizeSelect').value, 10);
         
         let pixels = {};
+        let pendingSaveBuffer = {}; // Tampon de sauvegarde en BDD
         let isDrawing = false;
         let lastX = null;
         let lastY = null;
@@ -152,26 +149,20 @@
         let initialPinchDistance = null;
         let initialScale = scale;
 
-        // --- INITIALISATION CANAL TEMPS RÉEL (BROADCAST) ---
+        // --- CANAL DE BROADCAST EN TEMPS RÉEL ---
         const realtimeChannel = _supabase.channel('pixel_war_room', {
             config: { broadcast: { ack: false, self: false } }
         });
 
-        // Écoute des événements de dessin des autres joueurs
-        realtimeChannel.on('broadcast', { event: 'draw_pixel' }, ({ payload }) => {
-            if (payload && payload.id && payload.color) {
-                pixels[payload.id] = payload.color;
-                const [x, y] = payload.id.split('_').map(Number);
-                ctx.fillStyle = payload.color;
-                ctx.fillRect(x, y, 1, 1);
+        // Réception instantanée d'un lot ou d'un pixel
+        realtimeChannel.on('broadcast', { event: 'draw_pixels' }, ({ payload }) => {
+            if (Array.isArray(payload)) {
+                payload.forEach(({ id, color }) => drawSinglePixel(id, color));
             }
         });
 
-        // Écoute de l'action d'effacement globale
         realtimeChannel.on('broadcast', { event: 'clear_board' }, () => {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
-            pixels = {};
+            resetCanvas();
         });
 
         realtimeChannel.subscribe((status) => {
@@ -180,14 +171,19 @@
             }
         });
 
+        function resetCanvas() {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
+            pixels = {};
+            pendingSaveBuffer = {};
+        }
+
         function initCanvas() {
             const containerRect = container.getBoundingClientRect();
             panX = (containerRect.width - GRID_SIZE * scale) / 2;
             panY = (containerRect.height - GRID_SIZE * scale) / 2;
             updateTransform();
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
+            resetCanvas();
         }
 
         function updateTransform() {
@@ -222,22 +218,52 @@
             currentSize = parseInt(e.target.value, 10);
         });
 
-        function setPixel(x, y, color) {
-            const pixelId = `${x}_${y}`;
+        function drawSinglePixel(pixelId, color) {
             pixels[pixelId] = color;
+            const [x, y] = pixelId.split('_').map(Number);
             ctx.fillStyle = color;
             ctx.fillRect(x, y, 1, 1);
-
-            // 1. Diffusion instantanée WebSockets (Temps réel pur)
-            realtimeChannel.send({
-                type: 'broadcast',
-                event: 'draw_pixel',
-                payload: { id: pixelId, color: color }
-            });
-
-            // 2. Sauvegarde asynchrone en BDD Supabase
-            savePixelToSupabase(pixelId, color);
         }
+
+        let broadcastBuffer = [];
+
+        function setPixel(x, y, color) {
+            const pixelId = `${x}_${y}`;
+            if (pixels[pixelId] === color) return;
+
+            drawSinglePixel(pixelId, color);
+
+            // Ajout aux tampons
+            pendingSaveBuffer[pixelId] = color;
+            broadcastBuffer.push({ id: pixelId, color: color });
+        }
+
+        // Diffusion Broadcast régulière (toutes les 50ms pendant le dessin)
+        setInterval(() => {
+            if (broadcastBuffer.length > 0) {
+                realtimeChannel.send({
+                    type: 'broadcast',
+                    event: 'draw_pixels',
+                    payload: broadcastBuffer
+                });
+                broadcastBuffer = [];
+            }
+        }, 50);
+
+        // Sauvegarde BDD groupée (toutes les 2 secondes)
+        setInterval(async () => {
+            const keys = Object.keys(pendingSaveBuffer);
+            if (keys.length === 0) return;
+
+            const records = keys.map(id => ({ id, color: pendingSaveBuffer[id] }));
+            pendingSaveBuffer = {};
+
+            try {
+                await _supabase.from('pixels').upsert(records);
+            } catch (err) {
+                console.error("Erreur de sauvegarde groupée :", err);
+            }
+        }, 2000);
 
         function applyBrush(x, y, color) {
             const half = Math.floor(currentSize / 2);
@@ -286,7 +312,6 @@
             }
 
             const { x, y } = getCanvasCoordinates(e);
-
             if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
 
             if (currentTool === 'picker') {
@@ -382,12 +407,8 @@
                 if (error) throw error;
 
                 if (data) {
-                    data.forEach(p => {
-                        pixels[p.id] = p.color;
-                        const [x, y] = p.id.split('_').map(Number);
-                        ctx.fillStyle = p.color;
-                        ctx.fillRect(x, y, 1, 1);
-                    });
+                    resetCanvas();
+                    data.forEach(p => drawSinglePixel(p.id, p.color));
                     statusEl.textContent = `🟢 Connecté (${data.length} pixels enregistrés)`;
                 }
             } catch (err) {
@@ -396,24 +417,10 @@
             }
         }
 
-        async function savePixelToSupabase(id, color) {
-            try {
-                await _supabase
-                    .from('pixels')
-                    .upsert({ id: id, color: color });
-            } catch (err) {
-                console.error("Erreur sauvegarde BDD:", err);
-            }
-        }
-
-        // Action Effacer Tout en temps réel
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (confirm("Voulez-vous vraiment effacer tout le canevas ?")) {
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
-                pixels = {};
+                resetCanvas();
 
-                // Informer immédiatement les autres utilisateurs
                 realtimeChannel.send({
                     type: 'broadcast',
                     event: 'clear_board'
@@ -423,7 +430,6 @@
             }
         });
 
-        // Démarrage
         initCanvas();
         loadPixels();
     </script>
