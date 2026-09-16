@@ -77,6 +77,37 @@
             background-color: #ffffff;
             box-shadow: 0 0 20px rgba(0,0,0,0.8);
         }
+        /* Conteneur pour superposer les curseurs des autres joueurs */
+        #cursors-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .remote-cursor {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+            transform: translate(-50%, -50%);
+            transition: left 0.05s linear, top 0.05s linear;
+            pointer-events: none;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+        .remote-cursor-label {
+            position: absolute;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.75);
+            color: white;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
         #status {
             position: absolute;
             bottom: 10px;
@@ -86,6 +117,7 @@
             border-radius: 4px;
             font-size: 0.85rem;
             pointer-events: none;
+            z-index: 10;
         }
     </style>
 </head>
@@ -117,6 +149,7 @@
 
     <div id="canvas-container">
         <canvas id="pixelCanvas" width="200" height="200"></canvas>
+        <div id="cursors-layer"></div>
         <div id="status">Chargement...</div>
     </div>
 
@@ -130,14 +163,19 @@
         const canvas = document.getElementById('pixelCanvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const container = document.getElementById('canvas-container');
+        const cursorsLayer = document.getElementById('cursors-layer');
         const statusEl = document.getElementById('status');
+
+        // Génération d'un profil joueur unique pour cette session
+        const myUserId = 'user_' + Math.random().toString(36).substr(2, 6);
+        const myUserColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
 
         let currentTool = 'pencil';
         let currentColor = document.getElementById('colorPicker').value;
         let currentSize = parseInt(document.getElementById('brushSizeSelect').value, 10);
         
         let pixels = {};
-        let pendingSaveBuffer = {}; // Tampon de sauvegarde en BDD
+        let pendingSaveBuffer = {};
         let isDrawing = false;
         let lastX = null;
         let lastY = null;
@@ -149,12 +187,38 @@
         let initialPinchDistance = null;
         let initialScale = scale;
 
-        // --- CANAL DE BROADCAST EN TEMPS RÉEL ---
+        let onlineUsersCount = 1;
+
+        // --- CANAL DE REALTIME (PRESENCE + BROADCAST) ---
         const realtimeChannel = _supabase.channel('pixel_war_room', {
-            config: { broadcast: { ack: false, self: false } }
+            config: {
+                presence: { key: myUserId },
+                broadcast: { ack: false, self: false }
+            }
         });
 
-        // Réception instantanée d'un lot ou d'un pixel
+        // 1. Gestion des joueurs en ligne (Presence)
+        realtimeChannel.on('presence', { event: 'sync' }, () => {
+            const state = realtimeChannel.presenceState();
+            onlineUsersCount = Object.keys(state).length;
+            updateStatusText();
+        });
+
+        realtimeChannel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+            leftPresences.forEach(user => {
+                const el = document.getElementById(`cursor-${user.user_id}`);
+                if (el) el.remove();
+            });
+        });
+
+        // 2. Réception de la position de la souris des autres
+        realtimeChannel.on('broadcast', { event: 'cursor_move' }, ({ payload }) => {
+            if (payload && payload.userId !== myUserId) {
+                updateRemoteCursor(payload);
+            }
+        });
+
+        // 3. Réception du dessin des autres
         realtimeChannel.on('broadcast', { event: 'draw_pixels' }, ({ payload }) => {
             if (Array.isArray(payload)) {
                 payload.forEach(({ id, color }) => drawSinglePixel(id, color));
@@ -165,11 +229,44 @@
             resetCanvas();
         });
 
-        realtimeChannel.subscribe((status) => {
+        realtimeChannel.subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                statusEl.textContent = "🟢 Connecté en temps réel";
+                await realtimeChannel.track({
+                    user_id: myUserId,
+                    color: myUserColor,
+                    online_at: new Date().toISOString()
+                });
+                updateStatusText();
             }
         });
+
+        function updateStatusText() {
+            statusEl.textContent = `🟢 ${onlineUsersCount} joueur(s) en ligne | ID: ${myUserId}`;
+        }
+
+        function updateRemoteCursor(data) {
+            let cursorEl = document.getElementById(`cursor-${data.userId}`);
+            if (!cursorEl) {
+                cursorEl = document.createElement('div');
+                cursorEl.id = `cursor-${data.userId}`;
+                cursorEl.className = 'remote-cursor';
+                cursorEl.style.backgroundColor = data.color;
+
+                const label = document.createElement('div');
+                label.className = 'remote-cursor-label';
+                label.textContent = data.userId;
+                cursorEl.appendChild(label);
+
+                cursorsLayer.appendChild(cursorEl);
+            }
+
+            // Repositionnement selon le Zoom/Pan du canvas
+            const screenX = panX + data.x * scale;
+            const screenY = panY + data.y * scale;
+
+            cursorEl.style.left = `${screenX}px`;
+            cursorEl.style.top = `${screenY}px`;
+        }
 
         function resetCanvas() {
             ctx.fillStyle = '#ffffff';
@@ -233,12 +330,11 @@
 
             drawSinglePixel(pixelId, color);
 
-            // Ajout aux tampons
             pendingSaveBuffer[pixelId] = color;
             broadcastBuffer.push({ id: pixelId, color: color });
         }
 
-        // Diffusion Broadcast régulière (toutes les 50ms pendant le dessin)
+        // Diffusion du dessin
         setInterval(() => {
             if (broadcastBuffer.length > 0) {
                 realtimeChannel.send({
@@ -250,7 +346,7 @@
             }
         }, 50);
 
-        // Sauvegarde BDD groupée (toutes les 2 secondes)
+        // Sauvegarde BDD
         setInterval(async () => {
             const keys = Object.keys(pendingSaveBuffer);
             if (keys.length === 0) return;
@@ -261,7 +357,7 @@
             try {
                 await _supabase.from('pixels').upsert(records);
             } catch (err) {
-                console.error("Erreur de sauvegarde groupée :", err);
+                console.error("Erreur sauvegarde :", err);
             }
         }, 2000);
 
@@ -305,6 +401,20 @@
             return { x, y };
         }
 
+        // Émettre la position de sa propre souris
+        let lastCursorSend = 0;
+        function sendCursorPosition(x, y) {
+            const now = Date.now();
+            if (now - lastCursorSend > 40) { // Limite à 25 FPS pour pas surcharger
+                realtimeChannel.send({
+                    type: 'broadcast',
+                    event: 'cursor_move',
+                    payload: { userId: myUserId, color: myUserColor, x, y }
+                });
+                lastCursorSend = now;
+            }
+        }
+
         function handleStart(e) {
             if (e.touches && e.touches.length > 1) {
                 isDrawing = false;
@@ -313,6 +423,8 @@
 
             const { x, y } = getCanvasCoordinates(e);
             if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
+
+            sendCursorPosition(x, y);
 
             if (currentTool === 'picker') {
                 const pixelId = `${x}_${y}`;
@@ -332,10 +444,15 @@
         }
 
         function handleMove(e) {
+            const { x, y } = getCanvasCoordinates(e);
+            
+            if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
+                sendCursorPosition(x, y);
+            }
+
             if (!isDrawing) return;
             if (e.touches && e.touches.length > 1) return;
 
-            const { x, y } = getCanvasCoordinates(e);
             if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
 
             if (x !== lastX || y !== lastY) {
@@ -353,11 +470,11 @@
         }
 
         canvas.addEventListener('mousedown', handleStart);
-        canvas.addEventListener('mousemove', handleMove);
+        container.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleEnd);
 
         canvas.addEventListener('touchstart', handleStart, { passive: false });
-        canvas.addEventListener('touchmove', handleMove, { passive: false });
+        container.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleEnd);
 
         container.addEventListener('wheel', (e) => {
@@ -399,54 +516,40 @@
         }, { passive: false });
 
         async function loadPixels() {
-    try {
-        statusEl.textContent = "⌛ Chargement des pixels...";
-        
-        let allPixels = [];
-        let from = 0;
-        const step = 1000;
-        let fetchMore = true;
+            try {
+                let allPixels = [];
+                let from = 0;
+                const step = 1000;
+                let fetchMore = true;
 
-        // Récupération de TOUS les pixels par paquets de 1000
-        while (fetchMore) {
-            const { data, error } = await _supabase
-                .from('pixels')
-                .select('id, color')
-                .range(from, from + step - 1);
+                while (fetchMore) {
+                    const { data, error } = await _supabase
+                        .from('pixels')
+                        .select('id, color')
+                        .range(from, from + step - 1);
 
-            if (error) throw error;
+                    if (error) throw error;
 
-            if (data && data.length > 0) {
-                allPixels = allPixels.concat(data);
-                if (data.length < step) {
-                    fetchMore = false; // Plus de données à lire
-                } else {
-                    from += step;
+                    if (data && data.length > 0) {
+                        allPixels = allPixels.concat(data);
+                        if (data.length < step) fetchMore = false;
+                        else from += step;
+                    } else {
+                        fetchMore = false;
+                    }
                 }
-            } else {
-                fetchMore = false;
+
+                resetCanvas();
+                allPixels.forEach(p => drawSinglePixel(p.id, p.color));
+            } catch (err) {
+                console.error("Erreur chargement Supabase:", err);
             }
         }
 
-        // Appliquer tous les pixels récupérés
-        resetCanvas();
-        allPixels.forEach(p => drawSinglePixel(p.id, p.color));
-        
-        statusEl.textContent = `🟢 Connecté (${allPixels.length} pixels chargés)`;
-    } catch (err) {
-        console.error("Erreur chargement Supabase:", err);
-        statusEl.textContent = "⚠️ Mode hors ligne ou erreur Supabase";
-    }
-}
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (confirm("Voulez-vous vraiment effacer tout le canevas ?")) {
                 resetCanvas();
-
-                realtimeChannel.send({
-                    type: 'broadcast',
-                    event: 'clear_board'
-                });
-
+                realtimeChannel.send({ type: 'broadcast', event: 'clear_board' });
                 await _supabase.from('pixels').delete().neq('id', 'clear');
             }
         });
