@@ -268,17 +268,49 @@
             ctx.restore();
         }
 
-        async function loadPixels() {
-            const { data } = await _supabase.from('pixels').select('*');
-            if (data) {
-                data.forEach(p => {
-                    const [x, y] = p.id.split('_').map(Number);
-                    gridData[y * GRID_WIDTH + x] = hexToUint32(p.color);
-                });
-                draw();
-            }
-        }
-        loadPixels();
+        // Charger tous les pixels avec affichage d'erreur en console
+async function loadPixels() {
+    const { data, error } = await _supabase.from('pixels').select('*');
+    if (error) {
+        console.error("❌ Erreur lors du chargement des pixels :", error.message);
+        return;
+    }
+    if (data) {
+        console.log(`✅ ${data.length} pixels chargés avec succès.`);
+        data.forEach(p => {
+            const [x, y] = p.id.split('_').map(Number);
+            gridData[y * GRID_WIDTH + x] = hexToUint32(p.color);
+        });
+        draw();
+    }
+}
+loadPixels();
+
+// Appliquer une action avec log d'erreur
+async function applyAction(gx, gy) {
+    if (gx < 0 || gx >= GRID_WIDTH || gy < 0 || gy >= GRID_HEIGHT) return;
+
+    if (currentMode === 'picker') {
+        const colorUint = gridData[gy * GRID_WIDTH + gx];
+        selectedColor = uint32ToHex(colorUint);
+        customColorPicker.value = selectedColor;
+        setMode('brush');
+        return;
+    }
+
+    const colorToApply = (currentMode === 'eraser') ? '#ffffff' : selectedColor;
+    const pixelId = `${gx}_${gy}`;
+
+    // Mise à jour visuelle immédiate
+    gridData[gy * GRID_WIDTH + gx] = hexToUint32(colorToApply);
+    draw();
+
+    // Envoi à Supabase et vérification d'erreur
+    const { error } = await _supabase.from('pixels').upsert({ id: pixelId, color: colorToApply });
+    if (error) {
+        console.error("❌ Erreur de sauvegarde Supabase :", error.message);
+    }
+}
 
         function drawLine(x0, y0, x1, y1, colorHex) {
             const dx = Math.abs(x1 - x0);
