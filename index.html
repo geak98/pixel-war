@@ -7,7 +7,7 @@
     <style>
         * {
             box-sizing: border-box;
-            touch-action: none; /* Empêche les gestes par défaut du navigateur */
+            touch-action: none;
         }
 
         body {
@@ -268,49 +268,29 @@
             ctx.restore();
         }
 
-        // Charger tous les pixels avec affichage d'erreur en console
-async function loadPixels() {
-    const { data, error } = await _supabase.from('pixels').select('*');
-    if (error) {
-        console.error("❌ Erreur lors du chargement des pixels :", error.message);
-        return;
-    }
-    if (data) {
-        console.log(`✅ ${data.length} pixels chargés avec succès.`);
-        data.forEach(p => {
-            const [x, y] = p.id.split('_').map(Number);
-            gridData[y * GRID_WIDTH + x] = hexToUint32(p.color);
-        });
-        draw();
-    }
-}
-loadPixels();
+        async function loadPixels() {
+            const { data, error } = await _supabase.from('pixels').select('*');
+            if (error) {
+                console.error("❌ Erreur chargement :", error.message);
+                return;
+            }
+            if (data) {
+                console.log(`✅ ${data.length} pixels chargés avec succès.`);
+                data.forEach(p => {
+                    const [x, y] = p.id.split('_').map(Number);
+                    gridData[y * GRID_WIDTH + x] = hexToUint32(p.color);
+                });
+                draw();
+            }
+        }
+        loadPixels();
 
-// Appliquer une action avec log d'erreur
-async function applyAction(gx, gy) {
-    if (gx < 0 || gx >= GRID_WIDTH || gy < 0 || gy >= GRID_HEIGHT) return;
-
-    if (currentMode === 'picker') {
-        const colorUint = gridData[gy * GRID_WIDTH + gx];
-        selectedColor = uint32ToHex(colorUint);
-        customColorPicker.value = selectedColor;
-        setMode('brush');
-        return;
-    }
-
-    const colorToApply = (currentMode === 'eraser') ? '#ffffff' : selectedColor;
-    const pixelId = `${gx}_${gy}`;
-
-    // Mise à jour visuelle immédiate
-    gridData[gy * GRID_WIDTH + gx] = hexToUint32(colorToApply);
-    draw();
-
-    // Envoi à Supabase et vérification d'erreur
-    const { error } = await _supabase.from('pixels').upsert({ id: pixelId, color: colorToApply });
-    if (error) {
-        console.error("❌ Erreur de sauvegarde Supabase :", error.message);
-    }
-}
+        async function savePixelToSupabase(x, y, colorHex) {
+            const { error } = await _supabase.from('pixels').upsert({ id: `${x}_${y}`, color: colorHex });
+            if (error) {
+                console.error("❌ Erreur sauvegarde pixel :", error.message);
+            }
+        }
 
         function drawLine(x0, y0, x1, y1, colorHex) {
             const dx = Math.abs(x1 - x0);
@@ -322,7 +302,7 @@ async function applyAction(gx, gy) {
             while (true) {
                 if (x0 >= 0 && x0 < GRID_WIDTH && y0 >= 0 && y0 < GRID_HEIGHT) {
                     gridData[y0 * GRID_WIDTH + x0] = hexToUint32(colorHex);
-                    _supabase.from('pixels').upsert({ id: `${x0}_${y0}`, color: colorHex });
+                    savePixelToSupabase(x0, y0, colorHex);
                 }
 
                 if (x0 === x1 && y0 === y1) break;
@@ -349,7 +329,7 @@ async function applyAction(gx, gy) {
                 drawLine(lastGridX, lastGridY, gx, gy, colorToApply);
             } else {
                 gridData[gy * GRID_WIDTH + gx] = hexToUint32(colorToApply);
-                _supabase.from('pixels').upsert({ id: `${gx}_${gy}`, color: colorToApply });
+                savePixelToSupabase(gx, gy, colorToApply);
             }
 
             lastGridX = gx;
@@ -357,7 +337,7 @@ async function applyAction(gx, gy) {
             draw();
         }
 
-        // --- GESTION DU TACTILE (TOUCH EVENTS) ---
+        // Tactile
         function getDistance(t1, t2) {
             return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
         }
@@ -388,13 +368,11 @@ async function applyAction(gx, gy) {
                 const gy = Math.floor((e.touches[0].clientY - rect.top - offsetY) / scale);
                 applyAction(gx, gy);
             } else if (e.touches.length === 2 && isDragging) {
-                // Deplacement
                 const currentMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
                 const currentMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 offsetX = currentMidX - startX;
                 offsetY = currentMidY - startY;
 
-                // Zoom (Pinch)
                 const currentDist = getDistance(e.touches[0], e.touches[1]);
                 if (initialPinchDistance) {
                     let newScale = initialScale * (currentDist / initialPinchDistance);
@@ -412,7 +390,7 @@ async function applyAction(gx, gy) {
             initialPinchDistance = null;
         });
 
-        // Event Souris pour PC
+        // Souris
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 2 || e.button === 1 || e.shiftKey) {
                 isDragging = true;
