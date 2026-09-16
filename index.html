@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pixel War</title>
-    <!-- Chargement du SDK Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
@@ -126,18 +125,10 @@
     </div>
 
     <script>
-        // CONFIGURATION SUPABASE
-        const SUPABASE_URL = "https://your-supabase-url.supabase.co"; // Remplace par ton URL Supabase
-        const SUPABASE_KEY = "your-anon-key";                      // Remplace par ta clé Supabase
+        const SUPABASE_URL = "https://gaecxfiykubxejoufsfu.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdhZWN4Zml5a3VieGVqb3Vmc2Z1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzOTgxMDksImV4cCI6MjEwNDk3NDEwOX0.2lidxjHfVW3xTNmH8VDsRQEjKd0aJum-kU8br-TZ3Zw";
 
-        // Initialisation avec option pour éviter le blocage Tracking Prevention de Edge
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: {
-                persistSession: false,
-                autoRefreshToken: false,
-                detectSessionInUrl: false
-            }
-        });
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         const GRID_SIZE = 200;
         const canvas = document.getElementById('pixelCanvas');
@@ -145,37 +136,28 @@
         const container = document.getElementById('canvas-container');
         const statusEl = document.getElementById('status');
 
-        // État de l'application
-        let currentTool = 'pencil'; // 'pencil', 'eraser', 'picker'
+        let currentTool = 'pencil';
         let currentColor = document.getElementById('colorPicker').value;
         let currentSize = parseInt(document.getElementById('brushSizeSelect').value, 10);
         
-        let pixels = {}; // Stockage local des pixels { "x,y": "#color" }
+        let pixels = {};
         let isDrawing = false;
         let lastX = null;
         let lastY = null;
 
-        // Transformation Canvas (Pan & Zoom)
         let scale = 2;
         let panX = 0;
         let panY = 0;
-        let isPanning = false;
-        let startPanX = 0;
-        let startPanY = 0;
 
-        // Gestion du multitouch
         let initialPinchDistance = null;
         let initialScale = scale;
 
-        // --- INITIALISATION DU CANVAS ---
         function initCanvas() {
-            // Centrer la grille au démarrage
             const containerRect = container.getBoundingClientRect();
             panX = (containerRect.width - GRID_SIZE * scale) / 2;
             panY = (containerRect.height - GRID_SIZE * scale) / 2;
             updateTransform();
             
-            // Effacer en blanc par défaut
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
         }
@@ -185,7 +167,6 @@
             canvas.style.transformOrigin = '0 0';
         }
 
-        // --- GESTION DES OUTILS ---
         const pencilBtn = document.getElementById('pencilBtn');
         const eraserBtn = document.getElementById('eraserBtn');
         const pickerBtn = document.getElementById('pickerBtn');
@@ -213,13 +194,12 @@
             currentSize = parseInt(e.target.value, 10);
         });
 
-        // --- DESSIN DE PIXEL ET TAILLE DE BROSSE ---
         function setPixel(x, y, color) {
-            const key = `${x},${y}`;
-            pixels[key] = color;
+            const pixelId = `${x}_${y}`;
+            pixels[pixelId] = color;
             ctx.fillStyle = color;
             ctx.fillRect(x, y, 1, 1);
-            savePixelToSupabase(x, y, color);
+            savePixelToSupabase(pixelId, color);
         }
 
         function applyBrush(x, y, color) {
@@ -235,7 +215,6 @@
             }
         }
 
-        // Algorithme de tracé continu (Bresenham)
         function drawLine(x0, y0, x1, y1, color) {
             const dx = Math.abs(x1 - x0);
             const dy = Math.abs(y1 - y0);
@@ -252,7 +231,6 @@
             }
         }
 
-        // --- CONVERSION DES COORDONNÉES ---
         function getCanvasCoordinates(e) {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -264,11 +242,10 @@
             return { x, y };
         }
 
-        // --- ACTIONS DESSIN / INTERACTION ---
         function handleStart(e) {
             if (e.touches && e.touches.length > 1) {
                 isDrawing = false;
-                return; // Géré par le multitouch (zoom)
+                return;
             }
 
             const { x, y } = getCanvasCoordinates(e);
@@ -276,8 +253,8 @@
             if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
 
             if (currentTool === 'picker') {
-                const key = `${x},${y}`;
-                const pickedColor = pixels[key] || '#ffffff';
+                const pixelId = `${x}_${y}`;
+                const pickedColor = pixels[pixelId] || '#ffffff';
                 currentColor = pickedColor;
                 colorPicker.value = pickedColor;
                 setActiveTool('pencil');
@@ -313,7 +290,6 @@
             lastY = null;
         }
 
-        // Événements Souris & Tactile Canvas
         canvas.addEventListener('mousedown', handleStart);
         canvas.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleEnd);
@@ -322,7 +298,6 @@
         canvas.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleEnd);
 
-        // --- PAN & ZOOM (DEPLACEMENT ET ZOOM) ---
         container.addEventListener('wheel', (e) => {
             e.preventDefault();
             const zoomFactor = 1.1;
@@ -338,7 +313,6 @@
             }
         }, { passive: false });
 
-        // Multitouch (Zoom / Pince)
         container.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
                 initialPinchDistance = Math.hypot(
@@ -362,63 +336,61 @@
             }
         }, { passive: false });
 
-        // --- SYNCHRONISATION SUPABASE ---
         async function loadPixels() {
             try {
                 const { data, error } = await _supabase
                     .from('pixels')
-                    .select('x, y, color');
+                    .select('id, color');
 
                 if (error) throw error;
 
                 if (data) {
                     data.forEach(p => {
-                        pixels[`${p.x},${p.y}`] = p.color;
+                        pixels[p.id] = p.color;
+                        const [x, y] = p.id.split('_').map(Number);
                         ctx.fillStyle = p.color;
-                        ctx.fillRect(p.x, p.y, 1, 1);
+                        ctx.fillRect(x, y, 1, 1);
                     });
-                    statusEl.textContent = `✅ ${data.length} pixels chargés.`;
+                    statusEl.textContent = `✅ ${data.length} pixels chargés avec succès.`;
                 }
             } catch (err) {
-                console.error("Erreur de chargement Supabase:", err);
+                console.error("Erreur Supabase :", err);
                 statusEl.textContent = "⚠️ Mode hors ligne ou erreur Supabase";
             }
         }
 
-        async function savePixelToSupabase(x, y, color) {
+        async function savePixelToSupabase(id, color) {
             try {
                 await _supabase
                     .from('pixels')
-                    .upsert({ x: x, y: y, color: color }, { onConflict: 'x,y' });
+                    .upsert({ id: id, color: color });
             } catch (err) {
-                console.error("Erreur de sauvegarde:", err);
+                console.error("Erreur sauvegarde :", err);
             }
         }
 
-        // Écoute en temps réel Supabase
         _supabase
             .channel('public:pixels')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'pixels' }, payload => {
                 if (payload.new) {
-                    const { x, y, color } = payload.new;
-                    pixels[`${x},${y}`] = color;
+                    const { id, color } = payload.new;
+                    pixels[id] = color;
+                    const [x, y] = id.split('_').map(Number);
                     ctx.fillStyle = color;
                     ctx.fillRect(x, y, 1, 1);
                 }
             })
             .subscribe();
 
-        // Bouton Tout effacer
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (confirm("Voulez-vous vraiment effacer tout le canevas ?")) {
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
                 pixels = {};
-                await _supabase.from('pixels').delete().neq('x', -1);
+                await _supabase.from('pixels').delete().neq('id', 'clear');
             }
         });
 
-        // Démarrage
         initCanvas();
         loadPixels();
     </script>
