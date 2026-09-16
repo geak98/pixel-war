@@ -130,8 +130,14 @@
         const SUPABASE_URL = "https://your-supabase-url.supabase.co"; // Remplace par ton URL Supabase
         const SUPABASE_KEY = "your-anon-key";                      // Remplace par ta clé Supabase
 
-        // Initialisation standard Supabase
-        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // Initialisation avec option pour éviter le blocage Tracking Prevention de Edge
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+                detectSessionInUrl: false
+            }
+        });
 
         const GRID_SIZE = 200;
         const canvas = document.getElementById('pixelCanvas');
@@ -140,11 +146,11 @@
         const statusEl = document.getElementById('status');
 
         // État de l'application
-        let currentTool = 'pencil';
+        let currentTool = 'pencil'; // 'pencil', 'eraser', 'picker'
         let currentColor = document.getElementById('colorPicker').value;
         let currentSize = parseInt(document.getElementById('brushSizeSelect').value, 10);
         
-        let pixels = {};
+        let pixels = {}; // Stockage local des pixels { "x,y": "#color" }
         let isDrawing = false;
         let lastX = null;
         let lastY = null;
@@ -153,18 +159,23 @@
         let scale = 2;
         let panX = 0;
         let panY = 0;
+        let isPanning = false;
+        let startPanX = 0;
+        let startPanY = 0;
 
-        // Multitouch
+        // Gestion du multitouch
         let initialPinchDistance = null;
         let initialScale = scale;
 
         // --- INITIALISATION DU CANVAS ---
         function initCanvas() {
+            // Centrer la grille au démarrage
             const containerRect = container.getBoundingClientRect();
             panX = (containerRect.width - GRID_SIZE * scale) / 2;
             panY = (containerRect.height - GRID_SIZE * scale) / 2;
             updateTransform();
             
+            // Effacer en blanc par défaut
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
         }
@@ -224,6 +235,7 @@
             }
         }
 
+        // Algorithme de tracé continu (Bresenham)
         function drawLine(x0, y0, x1, y1, color) {
             const dx = Math.abs(x1 - x0);
             const dy = Math.abs(y1 - y0);
@@ -240,7 +252,7 @@
             }
         }
 
-        // --- COORDONNÉES ---
+        // --- CONVERSION DES COORDONNÉES ---
         function getCanvasCoordinates(e) {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -252,11 +264,11 @@
             return { x, y };
         }
 
-        // --- ACTIONS ---
+        // --- ACTIONS DESSIN / INTERACTION ---
         function handleStart(e) {
             if (e.touches && e.touches.length > 1) {
                 isDrawing = false;
-                return;
+                return; // Géré par le multitouch (zoom)
             }
 
             const { x, y } = getCanvasCoordinates(e);
@@ -301,7 +313,7 @@
             lastY = null;
         }
 
-        // Événements
+        // Événements Souris & Tactile Canvas
         canvas.addEventListener('mousedown', handleStart);
         canvas.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleEnd);
@@ -310,7 +322,7 @@
         canvas.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', handleEnd);
 
-        // Pan & Zoom
+        // --- PAN & ZOOM (DEPLACEMENT ET ZOOM) ---
         container.addEventListener('wheel', (e) => {
             e.preventDefault();
             const zoomFactor = 1.1;
@@ -326,7 +338,7 @@
             }
         }, { passive: false });
 
-        // Multitouch
+        // Multitouch (Zoom / Pince)
         container.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
                 initialPinchDistance = Math.hypot(
@@ -350,7 +362,7 @@
             }
         }, { passive: false });
 
-        // --- SUPABASE ---
+        // --- SYNCHRONISATION SUPABASE ---
         async function loadPixels() {
             try {
                 const { data, error } = await _supabase
@@ -383,7 +395,7 @@
             }
         }
 
-        // Écoute temps réel
+        // Écoute en temps réel Supabase
         _supabase
             .channel('public:pixels')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'pixels' }, payload => {
@@ -396,7 +408,7 @@
             })
             .subscribe();
 
-        // Tout effacer
+        // Bouton Tout effacer
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (confirm("Voulez-vous vraiment effacer tout le canevas ?")) {
                 ctx.fillStyle = '#ffffff';
