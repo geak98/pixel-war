@@ -2,11 +2,12 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pixel War Pro - Studio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel War Mobile - Studio</title>
     <style>
         * {
             box-sizing: border-box;
+            touch-action: none; /* Empêche les gestes par défaut du navigateur */
         }
 
         body {
@@ -17,97 +18,84 @@
             padding: 0;
             overflow: hidden;
             user-select: none;
+            -webkit-user-select: none;
         }
 
-        /* Toolbar avec effet Glassmorphism */
         .toolbar {
             position: absolute;
-            top: 15px;
+            top: 10px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 10;
-            background: rgba(22, 22, 35, 0.75);
+            background: rgba(22, 22, 35, 0.85);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            padding: 10px 20px;
+            padding: 8px 14px;
             border-radius: 16px;
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 10px;
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            max-width: 95vw;
+            max-width: 96vw;
             flex-wrap: wrap;
             justify-content: center;
         }
 
         .title-badge {
             font-weight: 700;
-            font-size: 14px;
-            letter-spacing: 0.5px;
+            font-size: 13px;
             background: linear-gradient(135deg, #89b4fa, #cba6f7);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-right: 5px;
         }
 
         .palette {
             display: flex;
-            gap: 6px;
+            gap: 5px;
             align-items: center;
-            flex-wrap: wrap;
+            max-width: 60vw;
+            overflow-x: auto;
+            padding-bottom: 2px;
         }
 
         .color-box {
-            width: 24px;
-            height: 24px;
+            min-width: 26px;
+            height: 26px;
             border-radius: 6px;
             cursor: pointer;
             border: 2px solid transparent;
-            transition: transform 0.15s ease, border-color 0.15s ease;
-        }
-
-        .color-box:hover {
-            transform: scale(1.15);
+            flex-shrink: 0;
         }
 
         .color-box.selected {
             border-color: #ffffff;
-            transform: scale(1.2);
+            transform: scale(1.1);
             box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
         }
 
         .tools-group {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             align-items: center;
             border-left: 1px solid rgba(255, 255, 255, 0.15);
-            padding-left: 12px;
+            padding-left: 8px;
         }
 
         .btn-tool {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.15);
             color: #fff;
-            padding: 6px 12px;
+            padding: 6px 10px;
             border-radius: 8px;
-            font-size: 13px;
+            font-size: 12px;
             cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .btn-tool:hover {
-            background: rgba(255, 255, 255, 0.2);
         }
 
         .btn-tool.active {
             background: #89b4fa;
             color: #11111b;
             font-weight: bold;
-            border-color: #89b4fa;
         }
 
         .custom-color-picker {
@@ -122,16 +110,14 @@
 
         canvas {
             display: block;
-            cursor: crosshair;
         }
     </style>
-    <!-- SDK Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
     <div class="toolbar">
-        <span class="title-badge">🎨 PIXEL WAR STUDIO</span>
+        <span class="title-badge">🎨 PIXEL WAR</span>
         
         <div class="palette" id="palette">
             <div class="color-box selected" style="background: #ff0000;" data-color="#ff0000"></div>
@@ -147,16 +133,15 @@
             <div class="color-box" style="background: #ff99cc;" data-color="#ff99cc"></div>
             <div class="color-box" style="background: #8b4513;" data-color="#8b4513"></div>
             <div class="color-box" style="background: #ffffff;" data-color="#ffffff"></div>
-            <div class="color-box" style="background: #aaaaaa;" data-color="#aaaaaa"></div>
             <div class="color-box" style="background: #000000;" data-color="#000000"></div>
         </div>
 
-        <input type="color" id="customColor" class="custom-color-picker" value="#ff0000" title="Couleur personnalisée">
+        <input type="color" id="customColor" class="custom-color-picker" value="#ff0000">
 
         <div class="tools-group">
-            <button class="btn-tool active" id="btnBrush">✏️ Pinceau</button>
-            <button class="btn-tool" id="btnEraser">🧹 Gomme</button>
-            <button class="btn-tool" id="btnPicker">🧪 Pipette</button>
+            <button class="btn-tool active" id="btnBrush">✏️</button>
+            <button class="btn-tool" id="btnEraser">🧹</button>
+            <button class="btn-tool" id="btnPicker">🧪</button>
         </div>
     </div>
 
@@ -179,17 +164,18 @@
         const gridData = new Uint32Array(GRID_WIDTH * GRID_HEIGHT);
         gridData.fill(0xFFFFFFFF);
 
-        let scale = 3.5;
+        let scale = 3;
         let offsetX = (canvas.width - GRID_WIDTH * scale) / 2;
         let offsetY = (canvas.height - GRID_HEIGHT * scale) / 2;
         
         let isDragging = false;
         let isDrawing = false;
         let startX, startY;
-        let currentMode = 'brush'; // 'brush', 'eraser', 'picker'
+        let currentMode = 'brush';
         let selectedColor = '#ff0000';
         let lastGridX = null, lastGridY = null;
-        let hoveredGridX = -1, hoveredGridY = -1;
+        let initialPinchDistance = null;
+        let initialScale = scale;
 
         function hexToUint32(hex) {
             const r = parseInt(hex.slice(1, 3), 16);
@@ -205,7 +191,6 @@
             return `#${r}${g}${b}`;
         }
 
-        // Interface Outillage
         const palette = document.getElementById('palette');
         const customColorPicker = document.getElementById('customColor');
         const btnBrush = document.getElementById('btnBrush');
@@ -240,15 +225,6 @@
             setMode('brush');
         });
 
-        // Raccourcis clavier
-        window.addEventListener('keydown', (e) => {
-            if (e.key.toLowerCase() === 'e') setMode('eraser');
-            if (e.key.toLowerCase() === 'b') setMode('brush');
-            if (e.key.toLowerCase() === 'p') setMode('picker');
-        });
-
-        canvas.addEventListener('contextmenu', e => e.preventDefault());
-
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -276,7 +252,6 @@
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(offscreenCanvas, 0, 0);
 
-            // Grille subtile lors du zoom
             if (scale > 6) {
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
                 ctx.lineWidth = 0.03;
@@ -288,13 +263,6 @@
                     ctx.moveTo(0, y); ctx.lineTo(GRID_WIDTH, y);
                 }
                 ctx.stroke();
-            }
-
-            // Highlight de survol du pixel
-            if (hoveredGridX >= 0 && hoveredGridX < GRID_WIDTH && hoveredGridY >= 0 && hoveredGridY < GRID_HEIGHT) {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-                ctx.lineWidth = 0.1;
-                ctx.strokeRect(hoveredGridX, hoveredGridY, 1, 1);
             }
 
             ctx.restore();
@@ -312,7 +280,6 @@
         }
         loadPixels();
 
-        // Algorithme de tracé de ligne continu (Bresenham)
         function drawLine(x0, y0, x1, y1, colorHex) {
             const dx = Math.abs(x1 - x0);
             const dy = Math.abs(y1 - y0);
@@ -358,6 +325,62 @@
             draw();
         }
 
+        // --- GESTION DU TACTILE (TOUCH EVENTS) ---
+        function getDistance(t1, t2) {
+            return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        }
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDrawing = true;
+                const rect = canvas.getBoundingClientRect();
+                const gx = Math.floor((e.touches[0].clientX - rect.left - offsetX) / scale);
+                const gy = Math.floor((e.touches[0].clientY - rect.top - offsetY) / scale);
+                applyAction(gx, gy);
+            } else if (e.touches.length === 2) {
+                isDrawing = false;
+                isDragging = true;
+                initialPinchDistance = getDistance(e.touches[0], e.touches[1]);
+                initialScale = scale;
+                startX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - offsetX;
+                startY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - offsetY;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+
+            if (e.touches.length === 1 && isDrawing) {
+                const gx = Math.floor((e.touches[0].clientX - rect.left - offsetX) / scale);
+                const gy = Math.floor((e.touches[0].clientY - rect.top - offsetY) / scale);
+                applyAction(gx, gy);
+            } else if (e.touches.length === 2 && isDragging) {
+                // Deplacement
+                const currentMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const currentMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                offsetX = currentMidX - startX;
+                offsetY = currentMidY - startY;
+
+                // Zoom (Pinch)
+                const currentDist = getDistance(e.touches[0], e.touches[1]);
+                if (initialPinchDistance) {
+                    let newScale = initialScale * (currentDist / initialPinchDistance);
+                    scale = Math.max(0.8, Math.min(45, newScale));
+                }
+                draw();
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => {
+            isDrawing = false;
+            isDragging = false;
+            lastGridX = null;
+            lastGridY = null;
+            initialPinchDistance = null;
+        });
+
+        // Event Souris pour PC
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 2 || e.button === 1 || e.shiftKey) {
                 isDragging = true;
@@ -373,21 +396,16 @@
         });
 
         canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const gx = Math.floor((e.clientX - rect.left - offsetX) / scale);
-            const gy = Math.floor((e.clientY - rect.top - offsetY) / scale);
-
-            hoveredGridX = gx;
-            hoveredGridY = gy;
-
             if (isDragging) {
                 offsetX = e.clientX - startX;
                 offsetY = e.clientY - startY;
+                draw();
             } else if (isDrawing) {
+                const rect = canvas.getBoundingClientRect();
+                const gx = Math.floor((e.clientX - rect.left - offsetX) / scale);
+                const gy = Math.floor((e.clientY - rect.top - offsetY) / scale);
                 applyAction(gx, gy);
             }
-
-            draw();
         });
 
         window.addEventListener('mouseup', () => {
@@ -400,14 +418,11 @@
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             const zoomFactor = 1.15;
-            const mouseX = e.clientX;
-            const mouseY = e.clientY;
-
             let newScale = e.deltaY < 0 ? scale * zoomFactor : scale / zoomFactor;
             newScale = Math.max(0.8, Math.min(45, newScale));
 
-            offsetX = mouseX - (mouseX - offsetX) * (newScale / scale);
-            offsetY = mouseY - (mouseY - offsetY) * (newScale / scale);
+            offsetX = e.clientX - (e.clientX - offsetX) * (newScale / scale);
+            offsetY = e.clientY - (e.clientY - offsetY) * (newScale / scale);
             scale = newScale;
 
             draw();
