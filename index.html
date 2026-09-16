@@ -399,24 +399,45 @@
         }, { passive: false });
 
         async function loadPixels() {
-            try {
-                const { data, error } = await _supabase
-                    .from('pixels')
-                    .select('id, color');
+    try {
+        statusEl.textContent = "⌛ Chargement des pixels...";
+        
+        let allPixels = [];
+        let from = 0;
+        const step = 1000;
+        let fetchMore = true;
 
-                if (error) throw error;
+        // Récupération de TOUS les pixels par paquets de 1000
+        while (fetchMore) {
+            const { data, error } = await _supabase
+                .from('pixels')
+                .select('id, color')
+                .range(from, from + step - 1);
 
-                if (data) {
-                    resetCanvas();
-                    data.forEach(p => drawSinglePixel(p.id, p.color));
-                    statusEl.textContent = `🟢 Connecté (${data.length} pixels enregistrés)`;
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                allPixels = allPixels.concat(data);
+                if (data.length < step) {
+                    fetchMore = false; // Plus de données à lire
+                } else {
+                    from += step;
                 }
-            } catch (err) {
-                console.error("Erreur chargement Supabase:", err);
-                statusEl.textContent = "⚠️ Mode hors ligne ou erreur Supabase";
+            } else {
+                fetchMore = false;
             }
         }
 
+        // Appliquer tous les pixels récupérés
+        resetCanvas();
+        allPixels.forEach(p => drawSinglePixel(p.id, p.color));
+        
+        statusEl.textContent = `🟢 Connecté (${allPixels.length} pixels chargés)`;
+    } catch (err) {
+        console.error("Erreur chargement Supabase:", err);
+        statusEl.textContent = "⚠️ Mode hors ligne ou erreur Supabase";
+    }
+}
         document.getElementById('clearBtn').addEventListener('click', async () => {
             if (confirm("Voulez-vous vraiment effacer tout le canevas ?")) {
                 resetCanvas();
